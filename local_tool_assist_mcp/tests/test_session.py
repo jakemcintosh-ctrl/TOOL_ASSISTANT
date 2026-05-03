@@ -323,3 +323,44 @@ class TestUpdateReviewState(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class TestSessionPersistenceSafety(unittest.TestCase):
+
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.output_root = pathlib.Path(self._tmpdir.name)
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
+
+    @unittest.skipUnless(sess._HAS_YAML, "PyYAML not installed")
+    def test_save_session_redacts_sensitive_values(self):
+        sd, session_dir = sess.create_session("safe", "/repo", output_root=self.output_root)
+        sd["request"]["api_key"] = "SECRET"
+        sd["events"].append({"token": "TOPSECRET", "message": "ok"})
+        sd["events"].append({"env_snapshot": {"A": "B"}})
+        path = session_dir / "session.yaml"
+        sess.save_session(sd, path)
+        loaded = sess.load_session(path)
+        self.assertNotIn("api_key", loaded["request"])
+        self.assertNotIn("token", loaded["events"][0])
+        self.assertNotIn("env_snapshot", loaded["events"][1])
+
+    @unittest.skipUnless(sess._HAS_YAML, "PyYAML not installed")
+    def test_save_session_relativizes_artifact_paths(self):
+        sd, session_dir = sess.create_session("safe", "/repo", output_root=self.output_root)
+        artifact = session_dir / "reports" / "manifest.csv"
+        sd["artifacts"]["manifest_csv"] = str(artifact)
+        path = session_dir / "session.yaml"
+        sess.save_session(sd, path)
+        loaded = sess.load_session(path)
+        self.assertEqual(loaded["artifacts"]["manifest_csv"], "reports/manifest.csv")
+
+    @unittest.skipUnless(sess._HAS_YAML, "PyYAML not installed")
+    def test_save_session_uses_atomic_replace(self):
+        sd, session_dir = sess.create_session("safe", "/repo", output_root=self.output_root)
+        path = session_dir / "session.yaml"
+        sess.save_session(sd, path)
+        self.assertTrue(path.is_file())
+        leftovers = [p for p in path.parent.iterdir() if p.name.startswith(path.name + ".") and p.suffix == ".tmp"]
+        self.assertEqual(leftovers, [])

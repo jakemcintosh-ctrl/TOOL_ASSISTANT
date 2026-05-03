@@ -3,6 +3,7 @@
 import datetime
 import os
 import pathlib
+import tempfile
 import random
 import re
 import string
@@ -174,10 +175,17 @@ def save_session(session_dict: dict, yaml_path) -> None:
         for key, value in list(artifacts.items()):
             if isinstance(value, str):
                 artifacts[key] = _relative_to_session(value, session_dir)
-    tmp_path = path.with_suffix(path.suffix + ".tmp")
-    with open(tmp_path, "w", encoding="utf-8") as fh:
-        _yaml.dump(persistable, fh, default_flow_style=False, allow_unicode=True, sort_keys=False)
-    os.replace(tmp_path, path)
+    fd, tmp_name = tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp", dir=path.parent)
+    tmp_path = pathlib.Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            _yaml.dump(persistable, fh, default_flow_style=False, allow_unicode=True, sort_keys=False)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp_path, path)
+    finally:
+        if tmp_path.exists():
+            tmp_path.unlink()
 
 
 def load_session(yaml_path) -> dict:
