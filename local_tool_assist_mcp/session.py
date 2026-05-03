@@ -13,20 +13,10 @@ try:
 except ImportError:  # pragma: no cover
     _HAS_YAML = False
 
-# ---------------------------------------------------------------------------
-# Path constants
-# ---------------------------------------------------------------------------
-
 _HERE = pathlib.Path(__file__).parent
 _TOOLSET_ROOT = _HERE.parent
-
-#: Default root for all generated session artifacts.
 DEFAULT_OUTPUT_ROOT: pathlib.Path = _TOOLSET_ROOT / "local_tool_assist_outputs"
-
-#: Path to the managed Aletheia toolchain — used as cwd for subprocesses.
 TOOLCHAIN_ROOT: pathlib.Path = _TOOLSET_ROOT / "aletheia_toolchain"
-
-#: Subdirectories created under the output root on every session.
 _OUTPUT_SUBDIRS = ("sessions", "intermediate", "reports", "archive", "logs")
 
 _SESSION_ID_RE = re.compile(r"^lta_[0-9]{8}T[0-9]{6}Z_[a-z0-9]{6}$")
@@ -40,10 +30,8 @@ _REVIEW_STATE_FIELDS = frozenset({
     "approval_notes",
 })
 
+_SENSITIVE_KEY_RE = re.compile(r"(api[_-]?key|token|secret|password|authorization)", re.IGNORECASE)
 
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
 
 def _resolve_output_root(output_root=None) -> pathlib.Path:
     if output_root is not None:
@@ -58,19 +46,58 @@ def _now_str() -> str:
     return datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _relative_to_session(path_value: str, session_dir: pathlib.Path) -> str:
+    if not path_value:
+        return ""
+    value = pathlib.Path(path_value)
+    if not value.is_absolute():
+        return value.as_posix()
+    try:
+        return value.relative_to(session_dir).as_posix()
+    except ValueError:
+        return value.as_posix()
+
+
+def _sanitize_for_persistence(value):
+    if isinstance(value, dict):
+        cleaned = {}
+        for key, nested_value in value.items():
+            if _SENSITIVE_KEY_RE.search(str(key)):
+                continue
+            if str(key).lower() in {"environment", "env", "environment_snapshot", "env_snapshot"}:
+                continue
+            cleaned[key] = _sanitize_for_persistence(nested_value)
+        return cleaned
+    if isinstance(value, list):
+        return [_sanitize_for_persistence(item) for item in value]
+    return value
+
+
 def _build_session_dict(
     session_id: str,
     objective: str,
     target_repo: str,
     requested_by: str,
     downstream_agent: str,
+    session_dir: pathlib.Path,
 ) -> dict:
     now = _now_str()
     return {
         "schema_version": "LocalToolAssistSession/v1.0",
-        "session_id": session_id,
-        "created_at": now,
-        "updated_at": now,
+        "session": {
+            "id": session_id,
+            "created_at": now,
+            "updated_at": now,
+            "status": "created",
+            "review_state": {
+                "scan_reviewed": False,
+                "manifest_reviewed": False,
+                "slice_approved": False,
+                "approved_by": "",
+                "approved_at": "",
+                "approval_notes": "",
+            },
+        },
         "request": {
             "objective": objective,
             "target_repo": str(target_repo),
@@ -82,26 +109,26 @@ def _build_session_dict(
             "require_user_review_before_refine": True,
             "allow_command_execution": False,
         },
-        "review_state": {
-            "scan_reviewed": False,
-            "manifest_reviewed": False,
-            "slice_approved": False,
-            "approved_by": "",
-            "approved_at": "",
-            "approval_notes": "",
+        "paths": {
+            "session_dir": str(session_dir),
+            "output_root": str(session_dir.parent.parent),
+            "toolchain_root": str(TOOLCHAIN_ROOT),
         },
-        "policy": {
-            "forbid_shell": True,
-            "outputs_must_be_outside_toolchain": True,
-            "require_manifest_before_slice": True,
-            "require_linter_for_generated_commands": True,
-            "require_review_before_slice": True,
-            "approved_tools": [
-                "create_file_map_v3",
-                "manifest_doctor",
-                "tool_command_linter",
-                "semantic_slicer_v7.0",
-            ],
+        "tool_plan": {
+            "policy": {
+                "forbid_shell": True,
+                "outputs_must_be_outside_toolchain": True,
+                "require_manifest_before_slice": True,
+                "require_linter_for_generated_commands": True,
+                "require_review_before_slice": True,
+                "approved_tools": [
+                    "create_file_map_v3",
+                    "manifest_doctor",
+                    "tool_command_linter",
+                    "semantic_slicer_v7.0",
+                ],
+            },
+            "steps": [],
         },
         "artifacts": {
             "manifest_csv": "",
@@ -115,86 +142,55 @@ def _build_session_dict(
             "final_python_bundle": "",
             "archive_yaml": "",
         },
-        "steps": [],
-        "redaction": {
-            "enabled": True,
-            "fingerprint_algorithm": "sha1",
-        },
+        "events": [],
     }
 
 
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
-
 def generate_session_id() -> str:
-    """Return a unique session ID of the form ``lta_YYYYMMDDTHHMMSSZ_xxxxxx``."""
     ts = datetime.datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
     short = "".join(random.choices(string.ascii_lowercase + string.digits, k=6))
     return f"lta_{ts}_{short}"
 
 
-def create_session(
-    objective: str,
-    target_repo: str,
-    requested_by: str = "user",
-    downstream_agent: str = "unknown",
-    output_root=None,
-) -> tuple:
-    """Create a new session directory and session dict.
-
-    Returns ``(session_dict, session_dir)`` where *session_dir* is a
-    :class:`pathlib.Path`.  The output root and all five standard
-    subdirectories are created with ``exist_ok=True``.
-    """
+def create_session(objective: str, target_repo: str, requested_by: str = "user", downstream_agent: str = "unknown", output_root=None) -> tuple:
     root = _resolve_output_root(output_root)
     for subdir in _OUTPUT_SUBDIRS:
         (root / subdir).mkdir(parents=True, exist_ok=True)
-
     session_id = generate_session_id()
     session_dir = root / "sessions" / session_id
     session_dir.mkdir(parents=True, exist_ok=True)
-
-    return _build_session_dict(session_id, objective, target_repo, requested_by, downstream_agent), session_dir
+    return _build_session_dict(session_id, objective, target_repo, requested_by, downstream_agent, session_dir), session_dir
 
 
 def save_session(session_dict: dict, yaml_path) -> None:
-    """Write *session_dict* to a YAML file at *yaml_path*."""
     if not _HAS_YAML:
-        raise ImportError(
-            "PyYAML is required for save_session. Install with: pip install PyYAML"
-        )
+        raise ImportError("PyYAML is required for save_session. Install with: pip install PyYAML")
     path = pathlib.Path(yaml_path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w", encoding="utf-8") as fh:
-        _yaml.dump(
-            session_dict,
-            fh,
-            default_flow_style=False,
-            allow_unicode=True,
-            sort_keys=False,
-        )
+    persistable = _sanitize_for_persistence(session_dict)
+    session_dir = path.parent
+    artifacts = persistable.get("artifacts", {})
+    if isinstance(artifacts, dict):
+        for key, value in list(artifacts.items()):
+            if isinstance(value, str):
+                artifacts[key] = _relative_to_session(value, session_dir)
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    with open(tmp_path, "w", encoding="utf-8") as fh:
+        _yaml.dump(persistable, fh, default_flow_style=False, allow_unicode=True, sort_keys=False)
+    os.replace(tmp_path, path)
 
 
 def load_session(yaml_path) -> dict:
-    """Read and return a session dict from a YAML file."""
     if not _HAS_YAML:
-        raise ImportError(
-            "PyYAML is required for load_session. Install with: pip install PyYAML"
-        )
+        raise ImportError("PyYAML is required for load_session. Install with: pip install PyYAML")
     with open(yaml_path, "r", encoding="utf-8") as fh:
         return _yaml.safe_load(fh)
 
 
 def update_review_state(session_dict: dict, **kwargs) -> dict:
-    """Update ``review_state`` fields in-place.
-
-    Returns the same *session_dict* (mutated).  Raises :exc:`ValueError` for
-    unrecognised field names.
-    """
     unknown = set(kwargs) - _REVIEW_STATE_FIELDS
     if unknown:
         raise ValueError(f"Unknown review_state field(s): {sorted(unknown)}")
-    session_dict["review_state"].update(kwargs)
-    session_dict["updated_at"] = _now_str()
+    session_dict["session"]["review_state"].update(kwargs)
+    session_dict["session"]["updated_at"] = _now_str()
     return session_dict

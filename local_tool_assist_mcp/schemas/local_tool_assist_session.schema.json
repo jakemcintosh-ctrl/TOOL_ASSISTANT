@@ -1,0 +1,45 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "LocalToolAssistSession/v1.0",
+  "type": "object",
+  "required": ["schema_version", "session", "request", "execution_mode", "paths", "tool_plan", "artifacts", "events"],
+  "properties": {
+    "schema_version": {"type": "string", "const": "LocalToolAssistSession/v1.0"},
+    "session": {
+      "type": "object",
+      "required": ["id", "created_at", "updated_at", "status", "review_state"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^lta_[0-9]{8}T[0-9]{6}Z_[a-z0-9]{6}$"},
+        "created_at": {"type": "string"},
+        "updated_at": {"type": "string"},
+        "status": {"type": "string"},
+        "review_state": {
+          "type": "object",
+          "required": ["scan_reviewed", "manifest_reviewed", "slice_approved", "approved_by", "approved_at", "approval_notes"],
+          "properties": {
+            "scan_reviewed": {"type": "boolean"},
+            "manifest_reviewed": {"type": "boolean"},
+            "slice_approved": {"type": "boolean"},
+            "approved_by": {"type": "string"},
+            "approved_at": {"type": "string"},
+            "approval_notes": {"type": "string"}
+          }
+        }
+      }
+    },
+    "request": {"type": "object"},
+    "execution_mode": {
+      "type": "object",
+      "required": ["allow_command_execution"],
+      "properties": {"allow_command_execution": {"type": "boolean", "const": false}}
+    },
+    "paths": {"type": "object"},
+    "tool_plan": {
+      "type": "object",
+      "required": ["policy", "steps"],
+      "properties": {"policy": {"type": "object"}, "steps": {"type": "array"}}
+    },
+    "artifacts": {"type": "object", "required": ["manifest_csv", "manifest_health_json", "manifest_doctor_json", "manifest_doctor_md", "command_lint_json", "slicer_json", "slicer_md", "final_markdown", "final_python_bundle", "archive_yaml"], "properties": {"manifest_csv": {"type": "string"}, "manifest_health_json": {"type": "string"}, "manifest_doctor_json": {"type": "string"}, "manifest_doctor_md": {"type": "string"}, "command_lint_json": {"type": "string"}, "slicer_json": {"type": "string"}, "slicer_md": {"type": "string"}, "final_markdown": {"type": "string"}, "final_python_bundle": {"type": "string"}, "archive_yaml": {"type": "string"}}},
+    "events": {"type": "array"}
+  }
+}

@@ -32,12 +32,12 @@ class TestSchemaFile(unittest.TestCase):
     def test_schema_requires_review_state(self):
         with open(schemas.get_schema_path(), encoding="utf-8") as fh:
             data = json.load(fh)
-        self.assertIn("review_state", data["required"])
+        self.assertIn("session", data["required"])
 
     def test_schema_review_state_requires_slice_approved(self):
         with open(schemas.get_schema_path(), encoding="utf-8") as fh:
             data = json.load(fh)
-        review_required = data["properties"]["review_state"]["required"]
+        review_required = data["properties"]["session"]["properties"]["review_state"]["required"]
         self.assertIn("slice_approved", review_required)
 
     def test_schema_execution_mode_const_false(self):
@@ -117,7 +117,7 @@ class TestValidateSessionInvalid(unittest.TestCase):
 
     def test_fails_for_missing_review_state(self):
         sd = self._make()
-        del sd["review_state"]
+        del sd["session"]["review_state"]
         valid, errors = schemas.validate_session(sd)
         self.assertFalse(valid)
         self.assertTrue(len(errors) > 0)
@@ -131,7 +131,7 @@ class TestValidateSessionInvalid(unittest.TestCase):
 
     def test_fails_for_missing_session_id(self):
         sd = self._make()
-        del sd["session_id"]
+        del sd["session"]["id"]
         valid, errors = schemas.validate_session(sd)
         self.assertFalse(valid)
 
@@ -144,14 +144,14 @@ class TestValidateSessionInvalid(unittest.TestCase):
 
     def test_fails_for_missing_slice_approved(self):
         sd = self._make()
-        del sd["review_state"]["slice_approved"]
+        del sd["session"]["review_state"]["slice_approved"]
         valid, errors = schemas.validate_session(sd)
         self.assertFalse(valid)
 
     def test_returns_list_of_strings(self):
         sd = self._make()
-        del sd["review_state"]
-        del sd["session_id"]
+        del sd["session"]["review_state"]
+        del sd["session"]["id"]
         valid, errors = schemas.validate_session(sd)
         self.assertFalse(valid)
         for e in errors:

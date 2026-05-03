@@ -66,14 +66,13 @@ class TestCreateSession(unittest.TestCase):
     # Session dict structure
     def test_session_id_format(self):
         sd, _ = self._make()
-        self.assertRegex(sd["session_id"], _SESSION_ID_RE)
+        self.assertRegex(sd["session"]["id"], _SESSION_ID_RE)
 
     def test_required_top_level_keys(self):
         sd, _ = self._make()
         required = (
-            "schema_version", "session_id", "created_at", "updated_at",
-            "request", "execution_mode", "review_state", "policy",
-            "artifacts", "steps", "redaction",
+            "schema_version", "session", "request", "execution_mode",
+            "paths", "tool_plan", "artifacts", "events",
         )
         for key in required:
             self.assertIn(key, sd, f"Missing key: {key!r}")
@@ -84,14 +83,14 @@ class TestCreateSession(unittest.TestCase):
 
     def test_review_state_fields_present(self):
         sd, _ = self._make()
-        rs = sd["review_state"]
+        rs = sd["session"]["review_state"]
         for field in ("scan_reviewed", "manifest_reviewed", "slice_approved",
                       "approved_by", "approved_at", "approval_notes"):
             self.assertIn(field, rs, f"Missing review_state field: {field!r}")
 
     def test_review_state_defaults_false_or_empty(self):
         sd, _ = self._make()
-        rs = sd["review_state"]
+        rs = sd["session"]["review_state"]
         self.assertIs(rs["scan_reviewed"], False)
         self.assertIs(rs["manifest_reviewed"], False)
         self.assertIs(rs["slice_approved"], False)
@@ -105,7 +104,7 @@ class TestCreateSession(unittest.TestCase):
 
     def test_steps_is_empty_list(self):
         sd, _ = self._make()
-        self.assertEqual(sd["steps"], [])
+        self.assertEqual(sd["tool_plan"]["steps"], [])
 
     def test_all_artifact_fields_present(self):
         sd, _ = self._make()
@@ -119,15 +118,15 @@ class TestCreateSession(unittest.TestCase):
     # Policy
     def test_policy_forbid_shell(self):
         sd, _ = self._make()
-        self.assertTrue(sd["policy"]["forbid_shell"])
+        self.assertTrue(sd["tool_plan"]["policy"]["forbid_shell"])
 
     def test_policy_outputs_outside_toolchain(self):
         sd, _ = self._make()
-        self.assertTrue(sd["policy"]["outputs_must_be_outside_toolchain"])
+        self.assertTrue(sd["tool_plan"]["policy"]["outputs_must_be_outside_toolchain"])
 
     def test_policy_approved_tools_non_empty(self):
         sd, _ = self._make()
-        self.assertGreater(len(sd["policy"]["approved_tools"]), 0)
+        self.assertGreater(len(sd["tool_plan"]["policy"]["approved_tools"]), 0)
 
     # Boundary checks
     def test_session_dir_outside_aletheia_toolchain(self):
@@ -214,7 +213,7 @@ class TestSessionYamlRoundtrip(unittest.TestCase):
         path = session_dir / "session.yaml"
         sess.save_session(sd, path)
         loaded = sess.load_session(path)
-        self.assertEqual(loaded["session_id"], sd["session_id"])
+        self.assertEqual(loaded["session"]["id"], sd["session"]["id"])
 
     @unittest.skipUnless(sess._HAS_YAML, "PyYAML not installed")
     def test_yaml_roundtrip_review_state(self):
@@ -224,7 +223,7 @@ class TestSessionYamlRoundtrip(unittest.TestCase):
         path = session_dir / "session.yaml"
         sess.save_session(sd, path)
         loaded = sess.load_session(path)
-        self.assertEqual(loaded["review_state"], sd["review_state"])
+        self.assertEqual(loaded["session"]["review_state"], sd["session"]["review_state"])
 
     @unittest.skipUnless(sess._HAS_YAML, "PyYAML not installed")
     def test_yaml_roundtrip_execution_mode(self):
@@ -245,7 +244,7 @@ class TestSessionYamlRoundtrip(unittest.TestCase):
         path = session_dir / "session.yaml"
         sess.save_session(sd, path)
         loaded = sess.load_session(path)
-        self.assertEqual(loaded["policy"], sd["policy"])
+        self.assertEqual(loaded["tool_plan"]["policy"], sd["tool_plan"]["policy"])
 
     @unittest.skipUnless(sess._HAS_YAML, "PyYAML not installed")
     def test_yaml_roundtrip_review_state_after_update(self):
@@ -256,8 +255,8 @@ class TestSessionYamlRoundtrip(unittest.TestCase):
         path = session_dir / "session.yaml"
         sess.save_session(sd, path)
         loaded = sess.load_session(path)
-        self.assertTrue(loaded["review_state"]["scan_reviewed"])
-        self.assertEqual(loaded["review_state"]["approved_by"], "orchestrator")
+        self.assertTrue(loaded["session"]["review_state"]["scan_reviewed"])
+        self.assertEqual(loaded["session"]["review_state"]["approved_by"], "orchestrator")
 
 
 # ---------------------------------------------------------------------------
@@ -280,7 +279,7 @@ class TestUpdateReviewState(unittest.TestCase):
     def test_updates_scan_reviewed(self):
         sd = self._make_session()
         result = sess.update_review_state(sd, scan_reviewed=True)
-        self.assertTrue(result["review_state"]["scan_reviewed"])
+        self.assertTrue(result["session"]["review_state"]["scan_reviewed"])
 
     def test_returns_same_dict(self):
         sd = self._make_session()
@@ -290,8 +289,8 @@ class TestUpdateReviewState(unittest.TestCase):
     def test_updates_slice_approved(self):
         sd = self._make_session()
         sess.update_review_state(sd, slice_approved=True, approved_by="orchestrator")
-        self.assertTrue(sd["review_state"]["slice_approved"])
-        self.assertEqual(sd["review_state"]["approved_by"], "orchestrator")
+        self.assertTrue(sd["session"]["review_state"]["slice_approved"])
+        self.assertEqual(sd["session"]["review_state"]["approved_by"], "orchestrator")
 
     def test_updates_multiple_fields(self):
         sd = self._make_session()
@@ -301,9 +300,9 @@ class TestUpdateReviewState(unittest.TestCase):
             manifest_reviewed=True,
             approval_notes="LGTM",
         )
-        self.assertTrue(sd["review_state"]["scan_reviewed"])
-        self.assertTrue(sd["review_state"]["manifest_reviewed"])
-        self.assertEqual(sd["review_state"]["approval_notes"], "LGTM")
+        self.assertTrue(sd["session"]["review_state"]["scan_reviewed"])
+        self.assertTrue(sd["session"]["review_state"]["manifest_reviewed"])
+        self.assertEqual(sd["session"]["review_state"]["approval_notes"], "LGTM")
 
     def test_rejects_unknown_field(self):
         sd = self._make_session()
@@ -317,9 +316,9 @@ class TestUpdateReviewState(unittest.TestCase):
 
     def test_updated_at_is_set(self):
         sd = self._make_session()
-        self.assertIn("updated_at", sd)
+        self.assertIn("updated_at", sd["session"])
         sess.update_review_state(sd, scan_reviewed=True)
-        self.assertIn("updated_at", sd)
+        self.assertIn("updated_at", sd["session"])
 
 
 if __name__ == "__main__":
