@@ -1,0 +1,22 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "ToolResult/v1.0",
+  "definitions": {
+    "artifacts": {
+      "type": "object",
+      "required": ["manifest_csv", "manifest_health_json", "manifest_doctor_json", "manifest_doctor_md", "command_lint_json", "slicer_json", "slicer_md", "final_markdown", "final_python_bundle", "archive_yaml"],
+      "properties": {
+        "manifest_csv": {"type": "string"},
+        "manifest_health_json": {"type": "string"},
+        "manifest_doctor_json": {"type": "string"},
+        "manifest_doctor_md": {"type": "string"},
+        "command_lint_json": {"type": "string"},
+        "slicer_json": {"type": "string"},
+        "slicer_md": {"type": "string"},
+        "final_markdown": {"type": "string"},
+        "final_python_bundle": {"type": "string"},
+        "archive_yaml": {"type": "string"}
+      }
+    }
+  }
+}

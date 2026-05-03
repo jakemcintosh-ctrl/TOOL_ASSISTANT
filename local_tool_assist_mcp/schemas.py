@@ -4,13 +4,12 @@ import json
 import pathlib
 from typing import List, Tuple
 
-_SCHEMA_PATH = pathlib.Path(__file__).parent / "local_tool_assist_session.schema.json"
+_SCHEMA_PATH = pathlib.Path(__file__).parent / "schemas" / "local_tool_assist_session.schema.json"
 _schema_cache: dict | None = None
 
 _REQUIRED_TOP = (
-    "schema_version", "session_id", "created_at", "updated_at",
-    "request", "execution_mode", "review_state", "policy",
-    "artifacts", "steps", "redaction",
+    "schema_version", "session", "request", "execution_mode",
+    "paths", "tool_plan", "artifacts", "events",
 )
 _REQUIRED_REVIEW_STATE = (
     "scan_reviewed", "manifest_reviewed", "slice_approved",
@@ -61,7 +60,7 @@ def _manual_validate(session_dict: dict) -> Tuple[bool, List[str]]:
     if session_dict.get("schema_version") != "LocalToolAssistSession/v1.0":
         errors.append("schema_version must be 'LocalToolAssistSession/v1.0'")
 
-    review = session_dict.get("review_state", {})
+    review = session_dict.get("session", {}).get("review_state", {})
     for key in _REQUIRED_REVIEW_STATE:
         if key not in review:
             errors.append(f"Missing review_state field: {key!r}")
